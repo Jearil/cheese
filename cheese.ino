@@ -25,7 +25,7 @@
 #include <stdio.h>
 #include <Adafruit_CharacterOLED.h>
 #include <DHT.h>
-#include "setup.h"
+//#include "setup.h"
 
 #define DHTPIN 2 // Using pin 2 for DHT
 #define DHTTYPE DHT22 // Using a DHT22
@@ -33,31 +33,59 @@
 Adafruit_CharacterOLED lcd(6, 7, 8, 9, 10, 11, 12);
 DHT dht(DHTPIN, DHTTYPE);
 
+int tempUpPin = 13;
+
+int counter;
+
 void setup()
 {
-    setup_lcd(lcd);
-    setup_dht(dht);
+    Serial.begin(9600);
+    // LCD
+    lcd.begin(16,2);
+    lcd.print("Cheese-O-Matic");
+    lcd.setCursor(0, 1);
+    lcd.print("8000");
+	//DHT
+	dht.begin();
+    pinMode(tempUpPin, INPUT);
+    counter = 0;
 }
 
 void loop()
 {
+    int val = digitalRead(tempUpPin);
     // Add some profiling
     unsigned long start_time = millis();
+    
+    // Check temp/humidity
     // True for F
     float temp = dht.readTemperature(true);
     float humid = dht.readHumidity();
     unsigned long end_time = millis();
 
+    if (isnan(temp) || isnan(humid)) {
+        Serial.println("Failed to read from DHT");
+        lcd.clear();
+        lcd.home();
+        lcd.print("Failed DHT read");
+    }
+    else {
+        print_stats(temp, humid);
+    }
     // How long does it take to get t/h
     long duration = end_time - start_time;
 
-    print_stats(temp, humid);
     char line2[17];
     sprintf(line2, "DEBUG: %d", duration);
     lcd.setCursor(0, 1);
     lcd.print(line2);
-
-  // Check for temp/humidity
+    if (val == HIGH) {
+      counter++;
+    }
+      
+    lcd.print(" ");
+    lcd.print(counter);
+    
   // Display temp/humidity
   // Check if cave should be turned on/off
   // Check for button input
@@ -65,9 +93,21 @@ void loop()
 
 void print_stats(float temp, float humid)
 {
-    lcd.clear();
+    if(isnan(temp) || isnan(humid)) {
+        Serial.println("DHT22 sensor fail");
+        lcd.home();
+        lcd.print("Temp Fail");
+    } else {
+        print_th(temp, humid);
+    }
+}
+
+void print_th(float temp, float humid)
+{
     lcd.home();
-    char line1[17];
-    sprintf(line1, "%dF %d%", temp, humid);
-    lcd.print(line1);
+    lcd.print(temp);
+    lcd.print("F ");
+    lcd.print(humid);
+    lcd.print("\%    ");
+    Serial.println(temp);
 }
