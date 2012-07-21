@@ -47,6 +47,8 @@ void loop()
     float temp = dht.readTemperature(true);
     float humid = dht.readHumidity();
     unsigned long end_time = millis();
+
+    // How long does it take to get t/h
     long duration = end_time - start_time;
 
     print_stats(temp, humid);
