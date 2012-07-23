@@ -125,6 +125,9 @@ void print_stats(float temp, float humid, unsigned long duration)
         lcd.print("Temp Fail");
     } else {
         print_th(temp, humid);
+        Serial.print("Getting temp took: ");
+        Serial.print(duration);
+        Serial.println("ms\n");
     }
 }
 
