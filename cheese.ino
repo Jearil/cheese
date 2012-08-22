@@ -62,15 +62,20 @@ boolean cooling;
 unsigned long rollovers; // number of rollovers
 unsigned long start_time;
 
+// Some statistics
+unsigned long cooling_start;
+unsigned long last_cooling_duration;
+
 void setup()
 {
+    // Allows the freezer to be turned on when we first
+    // plug it in
     first_run = true;
     Serial.begin(9600);
     Serial.println("Cheese-O-Matic");
     // LCD
     Serial.println("Starting LCD");
     lcd.begin(16,2);
-    Serial.println("LCD Set");
     lcd.print("Cheese-O-Matic");
     lcd.setCursor(0, 1);
     lcd.print("8000");
@@ -82,23 +87,21 @@ void setup()
     pinMode(HUMID_DOWN_PIN, INPUT);
     pinMode(COOLING_PIN, OUTPUT);
     
-    // Freezer should be able to be turned on 5 min after boot
-
     cooling_off_time = millis();
     target_temp = 55;
     target_humid = 85;
-    temp_band = 2.5;
+    temp_band = 2.0;
     cooling = false;
     custom_text_time = millis();
     alternate_time_on = millis();
     start_time = millis();
     display_temp = true;
+    last_cooling_duration = 0;
     Serial.println("Finished Setup");
 }
 
 void loop()
 {
-    Serial.println("Starting loop");
     // check for rollover
     unsigned long last_start = start_time;
     start_time = millis();
@@ -119,7 +122,6 @@ void loop()
     long duration = end_time - start_time;
     
     // print display
-    Serial.println("Printing stats");
     print_stats(temp, humid, duration);
 
     lcd.setCursor(0, 1);
@@ -132,8 +134,6 @@ void loop()
     
     // Clear custom text
     clear_custom_text();
-    Serial.print("Target temp: ");
-    Serial.println(target_temp);
 }
 
 void print_stats(float temp, float humid, unsigned long duration)
@@ -144,9 +144,6 @@ void print_stats(float temp, float humid, unsigned long duration)
         lcd.print("Temp Fail");
     } else {
         print_th(temp, humid);
-        Serial.print("Getting temp took: ");
-        Serial.print(duration);
-        Serial.println("ms\n");
     }
 }
 
@@ -157,7 +154,6 @@ void print_th(float temp, float humid)
     lcd.print("F ");
     lcd.print(humid);
     lcd.print("\%    ");
-    Serial.println(temp);
 }
 
 void check_buttons()
@@ -167,13 +163,14 @@ void check_buttons()
     int humid_up_button = digitalRead(HUMID_UP_PIN);
     int humid_down_button = digitalRead(HUMID_DOWN_PIN);
     if (temp_up_button == HIGH) {
-        Serial.println("Raising temp");
         target_temp++;
         display_target_temp();
         custom_text_time = millis();
     }
     if (temp_down_button == HIGH) {
         target_temp--;
+        display_target_temp();
+        custom_text_time = millis();
     }
     if (humid_up_button == HIGH) {
         target_humid++;
@@ -185,9 +182,7 @@ void check_buttons()
 
 void adjust_temp(float temp)
 {
-    Serial.println("Adjusting temp");
    if(cooling) {
-       Serial.println("Still cooling");
        cooling_shutoff(temp);
    } else {
        float target_high = target_temp + temp_band;
@@ -210,19 +205,9 @@ void start_cooling()
         digitalWrite(COOLING_PIN, HIGH);
         cooling = true;
         lcd.print(">>Now Cooling<<");
+        cooling_start = millis();
         custom_text_time = millis();
         Serial.println("Starting cooldown");
-    } else {
-       unsigned long remaining = COIL_MIN_REST - time_passed;
-       Serial.println("Can't cool, Coils resting");
-       Serial.print("Time Remaining: ");
-       Serial.println(remaining);
-       Serial.print("Time passed: ");
-       Serial.println(time_passed);
-       Serial.print("COIL_MIN_REST: ");
-       Serial.println(COIL_MIN_REST);
-       Serial.print("Cooling off time: ");
-       Serial.println(cooling_off_time);
     }
 }
 
@@ -240,6 +225,7 @@ void cooling_shutoff(float temp)
         digitalWrite(COOLING_PIN, LOW);
         cooling = false;
         cooling_off_time = millis();
+        last_cooling_duration = cooling_off_time - cooling_start;
         lcd.print(">>Cooling Done<<");
         custom_text_time = millis();
     }
@@ -248,35 +234,51 @@ void cooling_shutoff(float temp)
 /* Clear any custom text that's going on and display
  * default data. If cooling, alternate display with
  * cooling info.
- */
- void clear_custom_text()
- {
-     unsigned long custom_duration = millis() - custom_text_time;
-     if (custom_duration >= text_hang_time) {
-         // now we can clear text
-         if(cooling) {
-             if(display_temp) {
-                 display_target_temp();
-                 if(millis() - alternate_time_on >= text_hang_time) {
-                     display_temp = false;
-                     alternate_time_on = millis();
-                 }
-             } else {
-                 lcd.print(">>Now Cooling<<");
-                 if (millis() - alternate_time_on > text_hang_time) {
-                     display_temp = true; 
-                     alternate_time_on = millis();
-                 }
-             }
-         } else {
-             display_target_temp();
-         }
-     }
- }
- 
- void display_target_temp()
- {
-     lcd.print("Target: ");
-     lcd.print(target_temp);
-     lcd.print("F      ");
- }
+*/
+void clear_custom_text()
+{
+    unsigned long custom_duration = millis() - custom_text_time;
+    if (custom_duration >= text_hang_time) {
+        // now we can clear text
+        if(cooling) {
+            if(display_temp) {
+                display_target_temp();
+                text_switch_check();
+            } else {
+                lcd.print(">>Now Cooling<<");
+                text_switch_check();
+            }
+        } else if(display_temp) {
+            display_target_temp();
+            text_switch_check();
+        } else {
+            display_last_duration();
+            text_switch_check();
+        }
+    }
+}
+
+
+boolean text_switch_check()
+{
+    if (millis() - alternate_time_on >= text_hang_time) {
+        alternate_time_on = millis();
+        return !display_temp;
+    }
+    return display_temp;
+}
+
+void display_target_temp()
+{
+    lcd.print("Target: ");
+    lcd.print(target_temp);
+    lcd.print("F      ");
+}
+
+void display_last_duration()
+{
+    lcd.print("LCool: ");
+    unsigned long duration_seconds = last_cooling_duration / 60;
+    lcd.print(duration_seconds);
+    lcd.print("S        ");
+}
